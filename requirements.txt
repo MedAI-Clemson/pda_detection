@@ -1,0 +1,11 @@
+pandas
+numpy
+scipy
+scikit-learn
+matplotlib
+seaborn
+opencv-python
+jupyter
+jupyterlab
+timm
+
