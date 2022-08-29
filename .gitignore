@@ -1,3 +1,5 @@
 models/
 data/
 .idea/
+*.pyc
+*ipynb_checkpoints*
