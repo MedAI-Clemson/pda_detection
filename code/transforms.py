@@ -38,14 +38,14 @@ class ImageTransforms:
 
 
 class VideoTransforms:
-    def __init__(self, res: int):
+    def __init__(self, res: int, time_downscale_factor:int = 1.0):
 
         self._tfms_train = tfm.Compose([
             tfm.RandomEqualize(p=0.5),
             tfm.RandAugment(),
             tfm.ConvertImageDtype(torch.float32),
             nn.UpsamplingBilinear2d(res),
-            RandomDownsampleTime(8), 
+            RandomDownsampleTime(time_downscale_factor), 
             tfm.CenterCrop(res),
             tfm.RandomErasing(scale=(0.02, 0.1)),
             tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),

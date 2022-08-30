@@ -124,6 +124,7 @@ class VideoData(PDAData):
         record['trg_mode'] = int(row['trg_mode'])
         record['study'] = row['study']
         record['patient'] = row['patient_id']
+        record['external_id'] = row['external_id']
 
         return record
 
