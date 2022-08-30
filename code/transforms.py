@@ -44,8 +44,8 @@ class VideoTransforms:
             tfm.RandomEqualize(p=0.5),
             tfm.RandAugment(),
             tfm.ConvertImageDtype(torch.float32),
-            tfm.Normalize(0,255),
             nn.UpsamplingBilinear2d(res),
+            RandomDownsampleTime(8), 
             tfm.CenterCrop(res),
             tfm.RandomErasing(scale=(0.02, 0.1)),
             tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
@@ -56,18 +56,25 @@ class VideoTransforms:
 
         self._tfms_test = tfm.Compose([
             tfm.ConvertImageDtype(torch.float32),
-            tfm.Normalize(0, 255),
             nn.UpsamplingBilinear2d(res),
             tfm.CenterCrop(res),
             tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
         ])
+        
+        self._tfms_plot = tfm.Compose([
+            tfm.ConvertImageDtype(torch.float32),
+            nn.UpsamplingBilinear2d(res),
+            tfm.CenterCrop(res),
+        ])
 
     def get_transforms(self, key):
-        implemented_keys = ['train', 'test']
+        implemented_keys = ['train', 'test', 'plot']
         if key == 'train':
             return self._tfms_train
         elif key == 'test':
             return self._tfms_test
+        elif key == 'plot': 
+            return self._tfms_plot
         else:
             raise NotImplementedError(f"Transform {key} is not implemented. Choose one of {implemented_keys}.")
 
@@ -81,3 +88,15 @@ class CustomCrop(nn.Module):
 
     def forward(self, img):
         return img[..., self.y_slice, self.x_slice]
+    
+class RandomDownsampleTime(nn.Module):
+    def __init__(self, reduction_factor):
+        super().__init__()
+        self.s = reduction_factor
+        
+    def forward(self, vid):
+        num_points = int(vid.shape[0]/self.s)
+        rand_t = torch.randint(low=0, high=vid.shape[0], size=(num_points,))
+        
+        # vid: [T, C, H, W]
+        return vid[rand_t]

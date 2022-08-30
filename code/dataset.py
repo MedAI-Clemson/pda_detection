@@ -161,3 +161,4 @@ class VideoData(PDAData):
         record.update(default_collate(batch_list))
 
         return record
+

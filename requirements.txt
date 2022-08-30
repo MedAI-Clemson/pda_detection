@@ -8,4 +8,6 @@ opencv-python
 jupyter
 jupyterlab
 timm
+jupyterplot
+av
 
