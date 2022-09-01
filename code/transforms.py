@@ -3,12 +3,13 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+resize_factor = 1.1
 
 class ImageTransforms:
     def __init__(self, res: int):
 
         self._tfms_train = tfm.Compose([
-            tfm.Resize(res),
+            tfm.Resize(int(resize_factor*res)),
             tfm.CenterCrop(res),
             tfm.RandomEqualize(p=0.5),
             tfm.RandAugment(),
@@ -21,11 +22,18 @@ class ImageTransforms:
         ])
 
         self._tfms_test = tfm.Compose([
-            tfm.Resize(res),
+            tfm.Resize(int(resize_factor*res)),
             tfm.CenterCrop(res),
             tfm.ToTensor(),
             tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
         ])
+        
+        self._tfms_plot = tfm.Compose([
+            tfm.Resize(int(resize_factor*res)),
+            tfm.CenterCrop(res),
+            tfm.ToTensor()
+        ])
+
 
     def get_transforms(self, key):
         implemented_keys = ['train', 'test']
@@ -33,6 +41,8 @@ class ImageTransforms:
             return self._tfms_train
         elif key == 'test':
             return self._tfms_test
+        elif key == 'plot': 
+            return self._tfms_plot
         else:
             raise NotImplementedError(f"Transform {key} is not implemented. Choose one of {implemented_keys}.")
 
@@ -43,9 +53,9 @@ class VideoTransforms:
         self._tfms_train = tfm.Compose([
             tfm.RandomEqualize(p=0.5),
             tfm.RandAugment(),
-            tfm.ConvertImageDtype(torch.float32),
-            nn.UpsamplingBilinear2d(res),
             RandomDownsampleTime(time_downscale_factor), 
+            tfm.ConvertImageDtype(torch.float32),
+            nn.UpsamplingBilinear2d(int(resize_factor*res)),
             tfm.CenterCrop(res),
             tfm.RandomErasing(scale=(0.02, 0.1)),
             tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
@@ -56,14 +66,14 @@ class VideoTransforms:
 
         self._tfms_test = tfm.Compose([
             tfm.ConvertImageDtype(torch.float32),
-            nn.UpsamplingBilinear2d(res),
+            nn.UpsamplingBilinear2d(int(resize_factor*res)),
             tfm.CenterCrop(res),
             tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
         ])
         
         self._tfms_plot = tfm.Compose([
             tfm.ConvertImageDtype(torch.float32),
-            nn.UpsamplingBilinear2d(res),
+            nn.UpsamplingBilinear2d(int(resize_factor*res)),
             tfm.CenterCrop(res),
         ])
 
