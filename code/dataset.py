@@ -8,12 +8,14 @@ from abc import ABC, abstractmethod
 
 
 class PDAData(Dataset, ABC):
-    """Image CSV Dataset"""
+    """Base class for PDA-related datasets."""
 
+    # definte a coding from type, view, and mode names to integers for modeling
     type_map = {'nopda': 0, 'pda': 1}
     view_map = {'nonPDAView': 0, 'pdaRelatedView': 1, 'pdaView': 2}
     mode_map = {'2d': 0, 'color': 1, 'color_compare': 2}
 
+    # define inverse maps
     inv_type_map = {v: k for k, v in type_map.items()}
     inv_view_map = {v: k for k, v in view_map.items()}
     inv_mode_map = {v: k for k, v in mode_map.items()}
@@ -45,7 +47,7 @@ class PDAData(Dataset, ABC):
 
 
 class ImageData(PDAData):
-    """Image CSV Dataset"""
+    """PDA Image dataset used to train frame classifiers."""
 
     def __init__(self, data: pd.DataFrame, transforms, view_filter=None, mode_filter=None):
         super().__init__(data, transforms, view_filter, mode_filter)
@@ -53,6 +55,7 @@ class ImageData(PDAData):
     def __getitem__(self, index) -> dict:
         row = self.data.iloc[index]
 
+        # create a data record containing the transformed image array and all metadata
         record = dict()
         record['img'] = self.tfms(Image.open(row['png_path']))
         record['trg_type'] = int(row['trg_type'])
@@ -69,6 +72,9 @@ class ImageData(PDAData):
 
     @staticmethod
     def display_batch(batch, n_cols=8, height=20):
+        """
+        Plots a single batch of data as output by a dataloader that makes use of this dataset.
+        """
         num_images = batch['img'].shape[0]
         n_rows = num_images // n_cols
         if n_rows * n_cols < num_images:
@@ -99,7 +105,7 @@ class ImageData(PDAData):
 
 
 class VideoData(PDAData):
-    """Image CSV Dataset"""
+    """PDA Video dataset used to train video-based model"""
 
     def __init__(self, data: pd.DataFrame, transforms, view_filter=None, mode_filter=None):
         super().__init__(data, transforms, view_filter, mode_filter)
@@ -133,6 +139,12 @@ class VideoData(PDAData):
 
     @staticmethod
     def collate(batch_list):
+        """
+        A custom collate function to be passed to the callate_fn argument when creating a pytorch dataloader.
+        This is necessary because videos have different lengths. We handle by combining all videos along the time 
+        dimension and returning a mask array with a column for each video. The column contains the value 1 for 
+        all frames that belong to the video and 0 for all frames that do not. 
+        """
         # handle collation of videos with different lengths
         # by concat along the time dimension and recording where videos start and end
         vids = torch.concat([b['video'] for b in batch_list])
@@ -147,6 +159,7 @@ class VideoData(PDAData):
             slices.append(slice(start_ix, end_ix))
             start_ix = end_ix
 
+        # create the mask. initialize as 0s then fill in 1s using slices defined above
         mask = torch.zeros((vids.shape[0], len(batch_list)), dtype=torch.bool)
         for ix in range(len(batch_list)):
             mask[slices[ix], ix] = 1
@@ -156,7 +169,7 @@ class VideoData(PDAData):
             'mask': mask
         }
 
-        # use default collate function for remaining items
+        # use pytorch's default collate function for remaining items
         for b in batch_list:
             b.pop('video')
         record.update(default_collate(batch_list))
