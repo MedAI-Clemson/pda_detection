@@ -57,6 +57,12 @@ class VideoClassifier(nn.Module):
         
         return p_vid, attn
     
+    def get_frame_classifier(self):
+        return nn.Sequential(
+            self.encoder,
+            self.fc_pda
+        )
+    
 class VideoClassifierZ(nn.Module):
     """
     Average the instance embeddings instead of probabilities as in 
@@ -107,6 +113,11 @@ class VideoClassifierZ(nn.Module):
         return p_vid, attn
     
 class MultiTaskFrameClassifier(nn.Module):
+    """
+    Output logit scores for pda classification, mode, and view. 
+    This network produces a common embedding and outputs logit scores for 
+    pda (called 'type' in code), mode, and view. 
+    """
     def __init__(self, encoder, encoder_frozen=True):
         super(MultiTaskFrameClassifier, self).__init__()
         
@@ -141,15 +152,19 @@ class MultiTaskFrameClassifier(nn.Module):
     
     @staticmethod
     def multi_task_loss(outputs, targets, weights):
+        """
+        Takes target classes and network outputs and computes the loss. 
+        Loss is computed as the weighted sum of pda, mode, and view classification cross entropy losses. 
+        Additionaly, samples with view '2d' or mode 'nonPDAView' have pda loss set to zero. 
+        That is because these views/modes do not adequately visualize the PDA. 
+        """
         # type loss:
-        # zero out the "type" loss if view is "nonPDAView" or mode is "2d"
-        # because these do not show relevant structure
-        # consult dataset.py for relevant codes
         ltype = torch.nn.functional.binary_cross_entropy_with_logits(
             outputs['type'], 
             targets['trg_type'][...,None].type(torch.float32),
             reduction = 'none'
         )
+        # zero out views/modes that do not visualize pda
         type_filter = (targets['trg_view']==0) | (targets['trg_mode']==0)
         ltype = torch.where(type_filter, 0, ltype.squeeze())
 
@@ -166,7 +181,8 @@ class MultiTaskFrameClassifier(nn.Module):
             targets['trg_view'].type(torch.long), 
             reduction = 'none'
         )
-
+        
+        # compute thte total 
         total_loss = \
             weights['type'] * ltype +\
             weights['mode'] * lmode +\
@@ -175,7 +191,6 @@ class MultiTaskFrameClassifier(nn.Module):
         loss_dict = {
             'total': total_loss.mean(axis=0),
             'type': ltype.mean(axis=0),
-            'type_filtered': ltype[~type_filter].mean(axis=0),
             'mode': lmode.mean(axis=0),
             'view': lview.mean(axis=0)
         }
