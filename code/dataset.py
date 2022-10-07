@@ -120,11 +120,16 @@ class VideoData(PDAData):
                             (self.data.external_id == row['external_id'])
         frames = self.data.loc[is_frame_from_vid, 'png_path'].tolist()
         frames = sorted(frames)
+        
+        # read all frames and concatenate into the video
         video = torch.concat([read_image(f)[None] for f in frames])
+        
+        # apply transforms to entire video
+        video = self.tfms(video)
 
         # build the output dict
         record = dict()
-        record['video'] = self.tfms(video)
+        record['video'] = video
         record['trg_type'] = int(row['trg_type'])
         record['trg_view'] = int(row['trg_view'])
         record['trg_mode'] = int(row['trg_mode'])
@@ -149,6 +154,7 @@ class VideoData(PDAData):
         # by concat along the time dimension and recording where videos start and end
         vids = torch.concat([b['video'] for b in batch_list])
         num_frames = [b['video'].shape[0] for b in batch_list]
+
         start_ix = 0
 
         # create a mask tensor for each video in the batch
@@ -166,7 +172,7 @@ class VideoData(PDAData):
 
         record = {
             'video': vids,
-            'mask': mask
+            'num_frames': num_frames
         }
 
         # use pytorch's default collate function for remaining items
@@ -175,4 +181,5 @@ class VideoData(PDAData):
         record.update(default_collate(batch_list))
 
         return record
+    
 

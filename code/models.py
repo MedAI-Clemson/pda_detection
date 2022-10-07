@@ -1,29 +1,17 @@
 import torch.nn as nn
 import torch
 import copy
+from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
 
 class VideoClassifier(nn.Module):
     """
-    Video classifier using attention over frames. Two things are computed for each frame:
-    1) the probability that the frame belongs to a PDA clip
-    2) the log attention for the frame which can be interpreted as the relevance of the frame
-    for pda classification
-    The latter is normalized 
-    
+    This model gives each frame equal weight. This is used as base class for the other methods. 
     """
     def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True):
         super(VideoClassifier, self).__init__()
-        
+      
         self.fc_pda = copy.deepcopy(frame_classifier.fc)
-        # copy linear layer to match dimensions
-        self.fc_attention = copy.deepcopy(frame_classifier.fc)
-        
-        # make the new classifier "at least as good" as averaging over frame scores
-        # by initializing to uniform attention
-        self.fc_attention.weight = nn.Parameter(torch.zeros_like(self.fc_attention.weight))
-        self.fc_attention.bias = nn.Parameter(torch.ones_like(self.fc_attention.bias))
-    
         self.encoder = frame_classifier
         self.encoder.fc = nn.Identity()
         
@@ -36,26 +24,11 @@ class VideoClassifier(nn.Module):
             for p in self.fc_pda.parameters():
                 p.requires_grad = False
         
-    def forward(self, x, mask):
-        h = self.encoder(x)
-        
-        # the frame-level probability of PDA
+    def forward(self, x, num_frames):
+        h = self.pad_encodings(self.encoder(x), num_frames)
         p_frame = torch.sigmoid(self.fc_pda(h))
-        
-        # attention logit for all frames
-        alpha = self.fc_attention(h)
-        
-        # setting logit attn to -40 for masked frames allows us to avoid python for loops
-        # alpha = torch.ones_like(alpha)  # use this for sanity check: this should be identical to just averaging frames
-        # the resulting masked attention will be very close to zero for frames not in the clip under consideration
-        alpha = torch.where(mask, alpha, -40)
-        attn = torch.softmax(alpha, axis=0)
-        
-        # compute video probability as the sum of the attention-weighted probabilities 
-        
-        p_vid = torch.sum(p_frame.expand(-1,mask.shape[-1]) * attn, axis=0)
-        
-        return p_vid, attn
+        p_vid = torch.mean(p_frame, axis=0)
+        return p_vid, torch.zeros_like(p_vid)
     
     def get_frame_classifier(self):
         return nn.Sequential(
@@ -63,55 +36,91 @@ class VideoClassifier(nn.Module):
             self.fc_pda
         )
     
-class VideoClassifierZ(nn.Module):
+    @staticmethod
+    def pad_encodings(h, num_frames):
+        # reshape as batch of vids and pad
+        start_ix = 0
+        h_ls = []
+        for n in num_frames:
+            h_ls.append(h[start_ix:(start_ix+n)])
+            start_ix += n
+        h = pad_sequence(h_ls)
+        
+        return h
+    
+    
+class VideoClassifier_PIattn(VideoClassifier):
     """
-    Average the instance embeddings instead of probabilities as in 
-    https://arxiv.org/abs/1802.04712
+    This version uses permutation invariant attention
     """
     def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True):
-        super(VideoClassifierZ, self).__init__()
-        
-        self.fc_pda = copy.deepcopy(frame_classifier.fc)
+        super(VideoClassifier_PIattn, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
+
         # copy linear layer to match dimensions
-        self.fc_attention = copy.deepcopy(frame_classifier.fc)
+        self.fc_attention = copy.deepcopy(self.fc_pda)
+
+        # "at least as good" initialization
+        self.fc_attention.weight = \
+            nn.Parameter(torch.zeros_like(self.fc_attention.weight))
+        self.fc_attention.bias = \
+            nn.Parameter(torch.ones_like(self.fc_attention.bias))
         
-        # make the new classifier "at least as good" as averaging over frame scores
-        # by initializing to uniform attention
-        self.fc_attention.weight = nn.Parameter(torch.zeros_like(self.fc_attention.weight))
-        self.fc_attention.bias = nn.Parameter(torch.ones_like(self.fc_attention.bias))
-    
-        self.encoder = frame_classifier
-        self.encoder.fc = nn.Identity()
-        
-        if encoder_frozen:
-            self.encoder.eval()
-            for p in self.encoder.parameters():
-                p.requires_grad = False
-                
-        if frame_classifier_frozen:
-            for p in self.fc_pda.parameters():
-                p.requires_grad = False
-        
-    def forward(self, x, mask):
-        h = self.encoder(x)
-        
-        # attention logit for all frames
+    def forward(self, x, num_frames):
+        # get frame embeddings
+        h = self.pad_encodings(self.encoder(x), num_frames)
+        p_frame = torch.sigmoid(self.fc_pda(h))
+
+        # attention
         alpha = self.fc_attention(h)
+        for ix, n in enumerate(num_frames):
+            alpha[n:, ix]=-40
+        attn = torch.softmax(alpha, axis=0)
+
+        p_vid = torch.sum(p_frame * attn, axis=0)        
+        return p_vid, attn
+   
+
+class VideoClassifier_LSTMattn(VideoClassifier):
+    """
+    This version uses an LSTM to compute attention
+    """
+    def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True, lstm_hidden_dim = 256):
+        super(VideoClassifier_LSTMattn, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
+
+        self.lstm_alpha = nn.LSTM(self.fc_pda.weight.shape[-1], lstm_hidden_dim, bidirectional=True)
+        self.fc_alpha = nn.Linear(2*lstm_hidden_dim,1)
         
-        # setting logit attn to -40 for masked frames allows us to avoid python for loops
-        # alpha = torch.ones_like(alpha)  # use this for sanity check: this should be identical to just averaging frames
-        # the resulting masked attention will be very close to zero for frames not in the clip under consideration
-        alpha = torch.where(mask, alpha, -40)
+        # "at least as good" initialization"
+        self.fc_alpha.weight = \
+            nn.Parameter(torch.zeros_like(self.fc_alpha.weight))
+        self.fc_alpha.bias = \
+            nn.Parameter(torch.ones_like(self.fc_alpha.bias))
+        
+    def forward(self, x, num_frames):
+        # get frame embeddings
+        h = self.pad_encodings(self.encoder(x), num_frames)
+        p_frame = torch.sigmoid(self.fc_pda(h))
+        
+        # pack frames for lstm
+        h = pack_padded_sequence(h, num_frames, enforce_sorted=False)
+        eta, _ = self.lstm_alpha(h)
+        eta, _ = pad_packed_sequence(eta)
+        
+        # attention
+        alpha = self.fc_alpha(eta)
+        for ix, n in enumerate(num_frames):
+            alpha[n:, ix]=-40
         attn = torch.softmax(alpha, axis=0)
         
-        # compute video probability as the sum of the attention-weighted probabilities 
-        
-        z = torch.sum(h[...,None]*attn[:,None], axis=0).T
-        
-        p_vid = torch.sigmoid(self.fc_pda(z))
-        
+        p_vid = torch.sum(p_frame * attn, axis=0)
         return p_vid, attn
     
+    def get_frame_classifier(self):
+        return nn.Sequential(
+            self.encoder,
+            self.fc_pda
+        )
+                               
 class MultiTaskFrameClassifier(nn.Module):
     """
     Output logit scores for pda classification, mode, and view. 
