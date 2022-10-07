@@ -27,7 +27,10 @@ class VideoClassifier(nn.Module):
     def forward(self, x, num_frames):
         h = self.pad_encodings(self.encoder(x), num_frames)
         p_frame = torch.sigmoid(self.fc_pda(h))
-        p_vid = torch.mean(p_frame, axis=0)
+        for ix, n in enumerate(num_frames):
+            p_frame[n:, ix] = 0
+        
+        p_vid = torch.sum(p_frame, axis=0) / torch.tensor(num_frames, dtype = p_frame.dtype)[:,None]
         return p_vid, torch.zeros_like(p_vid)
     
     def get_frame_classifier(self):
