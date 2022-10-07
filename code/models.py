@@ -30,7 +30,7 @@ class VideoClassifier(nn.Module):
         for ix, n in enumerate(num_frames):
             p_frame[n:, ix] = 0
         
-        p_vid = torch.sum(p_frame, axis=0) / torch.tensor(num_frames, dtype = p_frame.dtype)[:,None]
+        p_vid = torch.sum(p_frame, axis=0) / torch.tensor(num_frames, dtype = p_frame.dtype, device = p_frame.device)[:,None]
         return p_vid, torch.zeros_like(p_vid)
     
     def get_frame_classifier(self):
