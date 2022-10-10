@@ -49,7 +49,7 @@ class VideoClassifier(nn.Module):
         return h
     
     
-class VideoClassifier_PIattn(VideoClassifier):
+class VideoClassifier_PI_PI(VideoClassifier):
     """
     This version uses permutation invariant attention
     """
@@ -80,12 +80,12 @@ class VideoClassifier_PIattn(VideoClassifier):
         return p_vid, attn
    
 
-class VideoClassifier_LSTMattn(VideoClassifier):
+class VideoClassifier_LSTM_PI(VideoClassifier):
     """
     This version uses an LSTM to compute attention
     """
     def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True, lstm_hidden_dim = 256):
-        super(VideoClassifier_LSTMattn, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
+        super(VideoClassifier_LSTM_PI, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
 
         self.lstm_alpha = nn.LSTM(self.fc_pda.weight.shape[-1], lstm_hidden_dim, bidirectional=True)
         self.fc_alpha = nn.Linear(2*lstm_hidden_dim,1)
@@ -99,11 +99,12 @@ class VideoClassifier_LSTMattn(VideoClassifier):
     def forward(self, x, num_frames):
         # get frame embeddings
         h = self.pad_encodings(self.encoder(x), num_frames)
+        ## Swap this and alpha for LSTM / PI integraation
         p_frame = torch.sigmoid(self.fc_pda(h))
         
         # pack frames for lstm
         h = pack_padded_sequence(h, num_frames, enforce_sorted=False)
-        eta, _ = self.lstm_alpha(h)
+        eta, _= self.lstm_alpha(h)
         eta, _ = pad_packed_sequence(eta)
         
         # attention
@@ -120,7 +121,62 @@ class VideoClassifier_LSTMattn(VideoClassifier):
             self.encoder,
             self.fc_pda
         )
-                               
+    
+class VideoClassifier_PI_LSTM(VideoClassifier):
+    """
+    This version uses an LSTM to compute attention
+    """
+    def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True, lstm_hidden_dim = 256):
+        super(VideoClassifier_PI_LSTM, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
+
+        # copy linear layer to match dimensions
+        self.fc_attention = copy.deepcopy(self.fc_pda)
+        
+        # "at least as good" initialization
+        self.fc_attention.weight = \
+            nn.Parameter(torch.zeros_like(self.fc_attention.weight))
+        self.fc_attention.bias = \
+            nn.Parameter(torch.ones_like(self.fc_attention.bias))
+        
+        # LSTM for prob computation
+        self.lstm = nn.LSTM(self.fc_pda.weight.shape[-1], lstm_hidden_dim, bidirectional=True)
+        self.fc_pda = nn.Linear(2*lstm_hidden_dim,1)
+        
+
+
+       
+    def forward(self, x, num_frames):
+        # get frame embeddings
+        h = self.pad_encodings(self.encoder(x), num_frames)
+        
+        # attention
+        alpha = self.fc_attention(h)
+        # alpha = self.fc_alpha(h)
+        for ix, n in enumerate(num_frames):
+            alpha[n:, ix]=-40
+        attn = torch.softmax(alpha, axis=0)
+        
+        # pack frames for lstm
+        h = pack_padded_sequence(h, num_frames, enforce_sorted=False)
+        eta, _ = self.lstm(h)
+        eta, _ = pad_packed_sequence(eta)
+        
+        # import pdb; pdb.set_trace()
+        p_frame = torch.sigmoid(self.fc_pda(eta))
+        # p_frame = torch.sigmoid(self.fc_attention(eta))
+        
+        p_vid = torch.sum(p_frame * attn, axis=0)
+        # p_vid = torch.sum(p_frame * attn)/2048
+        # p_vid = torch.mean(p_vid)
+        # import pdb; pdb.set_trace()
+        return p_vid, attn
+    
+    def get_frame_classifier(self):
+        return nn.Sequential(
+            self.encoder,
+            self.fc_pda
+        )
+    
 class MultiTaskFrameClassifier(nn.Module):
     """
     Output logit scores for pda classification, mode, and view. 
