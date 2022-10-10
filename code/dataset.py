@@ -155,21 +155,6 @@ class VideoData(PDAData):
         vids = torch.concat([b['video'] for b in batch_list])
         num_frames = [b['video'].shape[0] for b in batch_list]
 
-        start_ix = 0
-
-        # create a mask tensor for each video in the batch
-        # use slices for conveniently pulling out frames from a particular video
-        slices = []
-        for n in num_frames:
-            end_ix = start_ix + n
-            slices.append(slice(start_ix, end_ix))
-            start_ix = end_ix
-
-        # create the mask. initialize as 0s then fill in 1s using slices defined above
-        mask = torch.zeros((vids.shape[0], len(batch_list)), dtype=torch.bool)
-        for ix in range(len(batch_list)):
-            mask[slices[ix], ix] = 1
-
         record = {
             'video': vids,
             'num_frames': num_frames

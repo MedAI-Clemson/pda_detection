@@ -2,7 +2,37 @@ import torch.nn as nn
 import torch
 import copy
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
+from torchvision.transforms import Resize
 
+class AttentionNetwork(nn.Module):
+    def __init__(self):
+        super(AttentionNetwork, self).__init__()
+
+        # feature encoder
+        self.encoder = nn.Sequential(
+            nn.Resize((32,32)),
+            nn.Conv2d(in_channels=1, out_channels=16, kernel_size=5, pad=2),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, pad=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, pad=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, pad=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+        
+        # linear head for computing un-normalized temporal attention
+        self.fc_alpha = nn.Linear(256, 1)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.fc_alpha(x)
+        return x
+    
 
 class VideoClassifier(nn.Module):
     """
@@ -26,9 +56,10 @@ class VideoClassifier(nn.Module):
         
     def forward(self, x, num_frames):
         h = self.pad_encodings(self.encoder(x), num_frames)
-        p_frame = torch.sigmoid(self.fc_pda(h))
+        logit_frame = self.fc_pda(h)
         for ix, n in enumerate(num_frames):
-            p_frame[n:, ix] = 0
+            logit_frame[n:, ix] = -40
+        p_frame = torch.sigmoid(logit_frame)
         
         p_vid = torch.sum(p_frame, axis=0) / torch.tensor(num_frames, dtype = p_frame.dtype, device = p_frame.device)[:,None]
         return p_vid, torch.zeros_like(p_vid)
@@ -67,6 +98,12 @@ class VideoClassifier_PIattn(VideoClassifier):
             nn.Parameter(torch.zeros_like(self.fc_attention.weight))
         self.fc_attention.bias = \
             nn.Parameter(torch.ones_like(self.fc_attention.bias))
+        
+        # # random init
+        # self.fc_attention.weight = \
+        #     nn.Parameter(torch.randn_like(self.fc_attention.weight))
+        # self.fc_attention.bias = \
+        #     nn.Parameter(torch.randn_like(self.fc_attention.bias))
         
     def forward(self, x, num_frames):
         # get frame embeddings
