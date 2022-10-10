@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch
 import copy
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
-
+import timm
 
 class VideoClassifier(nn.Module):
     """
@@ -145,8 +145,6 @@ class VideoClassifier_PI_LSTM(VideoClassifier):
         self.lstm = nn.LSTM(self.fc_pda.weight.shape[-1], lstm_hidden_dim, bidirectional=True)
         self.fc_pda = nn.Linear(2*lstm_hidden_dim,1)
         
-
-
        
     def forward(self, x, num_frames):
         # get frame embeddings
@@ -154,7 +152,6 @@ class VideoClassifier_PI_LSTM(VideoClassifier):
         
         # attention
         alpha = self.fc_attention(h)
-        # alpha = self.fc_alpha(h)
         for ix, n in enumerate(num_frames):
             alpha[n:, ix]=-40
         attn = torch.softmax(alpha, axis=0)
@@ -164,14 +161,10 @@ class VideoClassifier_PI_LSTM(VideoClassifier):
         eta, _ = self.lstm(h)
         eta, _ = pad_packed_sequence(eta)
         
-        # import pdb; pdb.set_trace()
         p_frame = torch.sigmoid(self.fc_pda(eta))
-        # p_frame = torch.sigmoid(self.fc_attention(eta))
         
         p_vid = torch.sum(p_frame * attn, axis=0)
-        # p_vid = torch.sum(p_frame * attn)/2048
-        # p_vid = torch.mean(p_vid)
-        # import pdb; pdb.set_trace()
+
         return p_vid, attn
     
     def get_frame_classifier(self):
@@ -179,7 +172,132 @@ class VideoClassifier_PI_LSTM(VideoClassifier):
             self.encoder,
             self.fc_pda
         )
+
+class VideoClassifier_LSTM_LSTM(VideoClassifier):
+    """
+    This version uses an LSTM to compute attention
+    """
+    def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True, lstm_hidden_dim = 256):
+        super(VideoClassifier_LSTM_LSTM, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
+        
+        # LSTM 1 for prob computation
+        self.lstm_alpha = nn.LSTM(self.fc_pda.weight.shape[-1], lstm_hidden_dim, bidirectional=True)
+        """
+        Don't know if fc_alpha is necessary, decided not to us it in forward method
+        """
+        self.fc_alpha = nn.Linear(2*lstm_hidden_dim,1)
+        
+        # "at least as good" initialization"
+        self.fc_alpha.weight = \
+            nn.Parameter(torch.zeros_like(self.fc_alpha.weight))
+        self.fc_alpha.bias = \
+            nn.Parameter(torch.ones_like(self.fc_alpha.bias))
+        
+        # LSTM 2
+        self.lstm_bravo = nn.LSTM(lstm_hidden_dim*2, lstm_hidden_dim//2, bidirectional=True)
+        self.fc_bravo = nn.Linear(lstm_hidden_dim,1)
+        
+        # "at least as good" initialization"
+        """
+        Maybe we should randomize these?
+        """
+        self.fc_bravo.weight = \
+            nn.Parameter(torch.zeros_like(self.fc_bravo.weight))
+        self.fc_bravo.bias = \
+            nn.Parameter(torch.ones_like(self.fc_bravo.bias))
+
+       
+    def forward(self, x, num_frames):
+        # get frame embeddings
+        h = self.pad_encodings(self.encoder(x), num_frames)
+        
+        # pack frames for lstm 1
+        h = pack_padded_sequence(h, num_frames, enforce_sorted=False)
+        eta, _ = self.lstm_alpha(h)
+        eta, _ = pad_packed_sequence(eta)
+        # Optional linear layer?
+        # alpha = self.fc_alpha(eta)
+        
+        # pack frames for lstm 2
+        h = pack_padded_sequence(eta, num_frames, enforce_sorted=False)
+        iota, _ = self.lstm_bravo(h)
+        iota, _ = pad_packed_sequence(iota)
+        bravo = self.fc_bravo(iota)
+                
+        p_vid = torch.mean(bravo, axis=0)
+  
+        return p_vid, _
     
+    def get_frame_classifier(self):
+        return nn.Sequential(
+            self.encoder,
+            self.fc_pda
+        )
+
+class VideoClassifier_LSTM_CNN(VideoClassifier):
+    """
+    This version uses an LSTM to compute attention
+    """
+    def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True, lstm_hidden_dim = 256):
+        super(VideoClassifier_LSTM_CNN, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
+        
+        self.lstm_hidden_dim = lstm_hidden_dim
+        
+        # LSTM for prob computation
+        self.lstm = nn.LSTM(self.fc_pda.weight.shape[-1], lstm_hidden_dim, bidirectional=True)
+        """
+        Don't know if fc_alpha is necessary, decided not to us it in forward method
+        """
+        self.fc_alpha = nn.Linear(2*lstm_hidden_dim,1)
+        
+        # "at least as good" initialization"
+        self.fc_alpha.weight = \
+            nn.Parameter(torch.zeros_like(self.fc_alpha.weight))
+        self.fc_alpha.bias = \
+            nn.Parameter(torch.ones_like(self.fc_alpha.bias))
+        
+        # CNN
+        self.conv_layer1 = nn.Conv1d(1,4,kernel_size = 3, stride=1, padding=0)
+        self.batchnorm1 = nn.BatchNorm1d(4)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.maxpool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.linear1 = nn.Linear(255, 1)
+        self.logsoftmax = nn.LogSoftmax(dim=1)
+        
+        # Load Predefined CNN using TIMM
+        # self.cnn_model = timm.create_model('resnet18', pretrained=False)
+        
+    def forward(self, x, num_frames):
+        # get frame embeddings
+        h = self.pad_encodings(self.encoder(x), num_frames)
+        # import pdb; pdb.set_trace()
+        
+        # pack frames for lstm
+        h = pack_padded_sequence(h, num_frames, enforce_sorted=False)
+        _, (eta,_) = self.lstm(h)
+        # Combine h_before and h_after
+        eta_combined = eta.transpose(0,1).reshape(len(num_frames), 2*self.lstm_hidden_dim)
+                
+        # CNN stuff
+        # Refactor for CNN
+        zulu = eta_combined[:,None,:]
+        # Send it down the pipe
+        zulu = self.conv_layer1(zulu)
+        zulu = self.batchnorm1(zulu)
+        zulu = self.relu1(zulu)
+        zulu = self.maxpool1(zulu)
+        p_vid = self.linear1(zulu)
+        # p_vid = self.logsoftmax(zulu).float()
+        # import pdb; pdb.set_trace()
+  
+        return p_vid, _
+    
+    def get_frame_classifier(self):
+        return nn.Sequential(
+            self.encoder,
+            self.fc_pda
+        )
+
 class MultiTaskFrameClassifier(nn.Module):
     """
     Output logit scores for pda classification, mode, and view. 
