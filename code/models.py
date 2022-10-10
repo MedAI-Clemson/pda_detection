@@ -57,7 +57,7 @@ class VideoClassifier_PI_PI(VideoClassifier):
     This version uses permutation invariant attention
     """
     def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True):
-        super(VideoClassifier_PIattn, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
+        super(VideoClassifier_PI_PI, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
 
         # copy linear layer to match dimensions
         self.fc_attention = copy.deepcopy(self.fc_pda)
