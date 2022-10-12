@@ -10,23 +10,28 @@ class AttentionNetwork(nn.Module):
 
         # feature encoder
         self.encoder = nn.Sequential(
-            nn.Resize((32,32)),
-            nn.Conv2d(in_channels=1, out_channels=16, kernel_size=5, pad=2),
+            Resize((32,32)),
+            nn.Conv2d(in_channels=3, out_channels=8, kernel_size=5, padding=2),
+            nn.BatchNorm2d(8),
             nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, pad=1),
+            nn.Conv2d(in_channels=8, out_channels=12, kernel_size=3, padding=1),
+            nn.BatchNorm2d(12),
             nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, pad=1),
+            nn.Conv2d(in_channels=12, out_channels=16, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, pad=1),
+            nn.Conv2d(in_channels=16, out_channels=24, kernel_size=3, padding=1),
+            nn.BatchNorm2d(24),
             nn.ReLU(),
-            nn.MaxPool2d(2)
+            nn.MaxPool2d(2),
+            nn.Flatten()
         )
         
         # linear head for computing un-normalized temporal attention
-        self.fc_alpha = nn.Linear(256, 1)
+        self.fc_alpha = nn.Linear(96, 1)
 
     def forward(self, x):
         x = self.encoder(x)
@@ -55,13 +60,12 @@ class VideoClassifier(nn.Module):
                 p.requires_grad = False
         
     def forward(self, x, num_frames):
-        h = self.pad_encodings(self.encoder(x), num_frames)
+        h = self.pad(self.encoder(x), num_frames)
         logit_frame = self.fc_pda(h)
         for ix, n in enumerate(num_frames):
-            logit_frame[n:, ix] = -40
-        p_frame = torch.sigmoid(logit_frame)
+            logit_frame[n:, ix] = 0
         
-        p_vid = torch.sum(p_frame, axis=0) / torch.tensor(num_frames, dtype = p_frame.dtype, device = p_frame.device)[:,None]
+        p_vid = torch.sum(logit_frame, axis=0) / torch.tensor(num_frames, dtype = logit_frame.dtype, device = logit_frame.device)[:,None]
         return p_vid, torch.zeros_like(p_vid)
     
     def get_frame_classifier(self):
@@ -71,7 +75,7 @@ class VideoClassifier(nn.Module):
         )
     
     @staticmethod
-    def pad_encodings(h, num_frames):
+    def pad(h, num_frames):
         # reshape as batch of vids and pad
         start_ix = 0
         h_ls = []
@@ -107,11 +111,38 @@ class VideoClassifier_PI_PI(VideoClassifier):
         
     def forward(self, x, num_frames):
         # get frame embeddings
-        h = self.pad_encodings(self.encoder(x), num_frames)
+        h = self.pad(self.encoder(x), num_frames)
         p_frame = torch.sigmoid(self.fc_pda(h))
 
         # attention
         alpha = self.fc_attention(h)
+        for ix, n in enumerate(num_frames):
+            alpha[n:, ix]=-40
+        attn = torch.softmax(alpha, axis=0)
+
+        p_vid = torch.sum(p_frame * attn, axis=0)        
+        return p_vid, attn
+    
+class VideoClassifier_PIlw_PI(VideoClassifier):
+    """
+    This version uses permutation invariant attention
+    """
+    def __init__(self, frame_classifier, encoder_frozen=True, frame_classifier_frozen=True):
+        super(VideoClassifier_PIlw_PI, self).__init__(frame_classifier, encoder_frozen=True, frame_classifier_frozen=True)
+
+        # copy linear layer to match dimensions
+        self.attn_net = AttentionNetwork()
+        
+    def forward(self, x, num_frames):
+        # get frame embeddings
+        h = self.pad(self.encoder(x), num_frames)
+        #p_frame = torch.sigmoid(self.fc_pda(h))
+        p_frame = self.fc_pda(h)
+
+        # attention
+        alpha = self.attn_net(x)
+        alpha = self.pad(alpha, num_frames)
+
         for ix, n in enumerate(num_frames):
             alpha[n:, ix]=-40
         attn = torch.softmax(alpha, axis=0)
@@ -138,7 +169,7 @@ class VideoClassifier_LSTM_PI(VideoClassifier):
         
     def forward(self, x, num_frames):
         # get frame embeddings
-        h = self.pad_encodings(self.encoder(x), num_frames)
+        h = self.pad(self.encoder(x), num_frames)
         ## Swap this and alpha for LSTM / PI integraation
         p_frame = torch.sigmoid(self.fc_pda(h))
         
@@ -187,7 +218,7 @@ class VideoClassifier_PI_LSTM(VideoClassifier):
        
     def forward(self, x, num_frames):
         # get frame embeddings
-        h = self.pad_encodings(self.encoder(x), num_frames)
+        h = self.pad(self.encoder(x), num_frames)
         
         # attention
         alpha = self.fc_attention(h)

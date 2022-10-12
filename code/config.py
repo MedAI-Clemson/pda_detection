@@ -37,7 +37,7 @@ config_video =cfg_video = dict(
     bs_test = 10, 
     num_workers = 30,  # number of parallel data loading workers
     device = 'cuda:1',
-    num_epochs=30,
+    num_epochs=20,
     lr = 0.001,
     lr_unfrozen = 0.0001,
     lr_gamma = 0.92,
@@ -45,7 +45,7 @@ config_video =cfg_video = dict(
     weight_decay = 0.001,
     time_downsample_factor = 7,
     pretrained=True,
-    unfreeze_after_n=4,
+    unfreeze_after_n=10,
     in_paths = dict(
         train = '/zfs/wficai/pda/model_data/train.csv',
         val = '/zfs/wficai/pda/model_data/val.csv'

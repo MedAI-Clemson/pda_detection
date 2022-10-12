@@ -87,14 +87,14 @@ def get_video_classifier(attn, prob):
             raise NotImplementedError("The none_LSTM model has not been implemented")
     elif attn=='PI':
         if prob=='PI':
-            return models.VideoClassifier_PIattn
+            return models.VideoClassifier_PIlw_PI
         else:
-            raise NotImplementedError("The PI_LSTM model has not been implemented")
+            raise models.VideoClassifier_PI_LSTM
     elif attn=="LSTM":
         if prob=='PI':
-            return models.VideoClassifier_LSTMattn
+            return models.VideoClassifier_LSTM_PI
         else:
-            raise NotImplementedError("The LSTM_LSTM model has not been implemented")
+            raise models.VideoClassifier_LSTM_LSTM
 
 def main(cfg):
     device = torch.device(cfg['device'])
@@ -126,11 +126,10 @@ def main(cfg):
     m_frames = timm.create_model(cfg['config_pretrain']['model'], pretrained=cfg['pretrained'],
                                  checkpoint_path = f"{cfg['pretrain_folder']}/model_checkpoint.ckpt",
                                  num_classes=1, in_chans=3, drop_rate=cfg['dropout'])
-    m_frames.to(device)
     
     # create video model
     video_classifier = get_video_classifier(cfg['attn'], cfg['prob'])
-    m = video_classifier(m_frames, encoder_frozen=True, frame_classifier_frozen=False)
+    m = video_classifier(m_frames, encoder_frozen=True, frame_classifier_frozen=False).to(device)
 
     # fit
     optimizer = optim.AdamP(m.parameters(), lr=cfg['lr'], weight_decay=cfg['weight_decay'])
