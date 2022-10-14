@@ -58,19 +58,24 @@ class ImageData(PDAData):
         # create a data record containing the transformed image array and all metadata
         record = dict()
         record['img'] = self.tfms(Image.open(row['png_path']))
+        
         record['trg_type'] = int(row['trg_type'])
         record['trg_view'] = int(row['trg_view'])
         record['trg_mode'] = int(row['trg_mode'])
         record['video'] = row['external_id']
         record['study'] = row['study']
         record['patient'] = row['patient_id']
-
+        record['imgr'] = row['png_path']
         return record
 
     def __len__(self):
         return len(self.data)
 
     @staticmethod
+    def getimage(self, index):
+        row = self.data.iloc[index]
+        return Image.open(row['png_path'])
+    
     def display_batch(batch, n_cols=8, height=20):
         """
         Plots a single batch of data as output by a dataloader that makes use of this dataset.
