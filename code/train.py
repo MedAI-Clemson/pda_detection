@@ -88,8 +88,10 @@ def get_video_classifier(attn, prob):
     elif attn=='PI':
         if prob=='PI':
             return models.VideoClassifier_PIlw_PI
-        else:
-            raise models.VideoClassifier_PI_LSTM
+        elif prob=='LSTM':
+            return models.VideoClassifier_PI_LSTM
+        elif prob=='CNN':
+            return models.VideoClassifier_PI_CNN
     elif attn=="LSTM":
         if prob=='PI':
             return models.VideoClassifier_LSTM_PI
@@ -134,9 +136,9 @@ def main(cfg):
     # fit
     optimizer = optim.AdamP(m.parameters(), lr=cfg['lr'], weight_decay=cfg['weight_decay'])
     scheduler = ExponentialLR(optimizer, gamma=cfg['lr_gamma'])
-    loss_function = torch.functional.F.binary_cross_entropy
+    loss_function = torch.functional.F.binary_cross_entropy_with_logits
     
-    # pre-training validation
+    print("Pre-training validation:")
     print(evaluate(m, dl_val, loss_function, device))
 
     train_loss_ls = []
@@ -170,8 +172,8 @@ def main(cfg):
         test_loss, metrics = evaluate(m, dl_val, loss_function, device)
         test_loss_ls.append(test_loss)
         metrics_ls.append(metrics)
-        print(f"Test:")
-        print(f"\tcross_entropy = {test_loss:0.3f}")
+        print(f"Validation:")
+        print(f"\tcross_entropy = {test_loss:0.3f} (previous best = {best_test_loss:0.3f})")
         print(f"\tmetrics:")
         for k, v in metrics.items():
             print(f"\t\t{k} = {v:0.3f}")
@@ -182,6 +184,10 @@ def main(cfg):
             
         scheduler.step()
         
+    print("Post-training validation:")
+    m.load_state_dict(torch.load(cfg['artifact_folder'] + '/model_checkpoint_video.ckpt'))
+    print(evaluate(m, dl_val, loss_function, device))
+        
 if __name__=='__main__':
     import argparse
     import config
@@ -191,7 +197,7 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Train a video classifier')
     parser.add_argument('--attn', type=str, choices = ('none', 'PI', 'LSTM'), default='none',
                         help='Method used to compute frame attention.')
-    parser.add_argument('--prob', type=str, choices = ('PI', 'LSTM'), default='PI',
+    parser.add_argument('--prob', type=str, choices = ('PI', 'LSTM', 'CNN'), default='PI',
                         help='Method used to compute frame probabilities.')
     parser.add_argument('--pretrain-folder', type=str, metavar='DIR', required=True,
                         help='path to pretrained frame classifier model artifact folder')
@@ -202,7 +208,7 @@ if __name__=='__main__':
     
     cfg['attn'] = args.attn
     cfg['prob'] = args.prob
-    cfg['time_downsample_method'] = 'contiguous' if (args.attn=='LSTM' or args.prob=='LSTM') else 'random'
+    cfg['time_downsample_method'] = 'contiguous' if (args.attn=='LSTM' or args.prob != 'PI') else 'random'
     print(f"Time downsampling method: {cfg['time_downsample_method']}")
     cfg['artifact_folder'] = args.artifact_folder
     cfg['pretrain_folder'] = args.pretrain_folder

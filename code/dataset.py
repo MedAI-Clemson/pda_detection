@@ -147,11 +147,8 @@ class VideoData(PDAData):
         """
         A custom collate function to be passed to the callate_fn argument when creating a pytorch dataloader.
         This is necessary because videos have different lengths. We handle by combining all videos along the time 
-        dimension and returning a mask array with a column for each video. The column contains the value 1 for 
-        all frames that belong to the video and 0 for all frames that do not. 
+        dimension and returning the number of frames in each video.
         """
-        # handle collation of videos with different lengths
-        # by concat along the time dimension and recording where videos start and end
         vids = torch.concat([b['video'] for b in batch_list])
         num_frames = [b['video'].shape[0] for b in batch_list]
 
@@ -167,4 +164,68 @@ class VideoData(PDAData):
 
         return record
     
+class EchoNetFrames(Dataset):
+    def __init__(self, video_data: pd.DataFrame, frame_data: pd.DataFrame,
+                 transforms, downsample_frac=None):
+        self.vid_data = video_data
+        self.frame_data = frame_data
+        
+        # downsample
+        if downsample_frac is not None:
+            assert downsample_frac > 0 and downsample_frac <= 1, "Downsample fraction f must satisfy 0<f<=1"
+            sample_n = int(downsample_frac * len(self.vid_data))
+            self.vid_data = self.vid_data.sample(sample_n, replace=False)
+            
+        # merge to get frames
+        self.data = self.vid_data.merge(self.frame_data, on='FileName')
 
+        # set transforms
+        self.tfms = transforms
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, index) -> dict:
+        row = self.data.iloc[index]
+
+        # create a data record containing the transformed image array and all metadata
+        record = dict()
+        record['img'] = self.tfms(Image.open(row['jpg_path']))
+        record['EF'] = row['EF']/100
+        record['ESV'] = row['ESV_scaled']
+        record['EDV'] = row['EDV_scaled']
+
+        return record
+    
+class EchoNetVideos(Dataset):
+    def __init__(self, video_data: pd.DataFrame, frame_data: pd.DataFrame,
+                 transforms, downsample_frac=None):
+        self.vid_data = video_data
+        self.frame_data = frame_data
+        
+        # downsample
+        if downsample_frac is not None:
+            assert downsample_frac > 0 and downsample_frac <= 1, "Downsample fraction f must satisfy 0<f<=1"
+            sample_n = int(downsample_frac * len(self.vid_data))
+            self.vid_data = self.vid_data.sample(sample_n, replace=False)
+            
+        # merge to get frames
+        self.data = self.vid_data.merge(self.frame_data, on='FileName')
+
+        # set transforms
+        self.tfms = transforms
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, index) -> dict:
+        row = self.data.iloc[index]
+
+        # create a data record containing the transformed image array and all metadata
+        record = dict()
+        record['img'] = self.tfms(Image.open(row['jpg_path']))
+        record['EF'] = row['EF']/100
+        record['ESV'] = row['ESV_scaled']
+        record['EDV'] = row['EDV_scaled']
+
+        return record

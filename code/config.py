@@ -28,6 +28,34 @@ config_pretrain = dict(
 )
 
 # config file used for model pretraining
+config_pretrain_echonet = dict(
+    downsample_frac = None,
+    bs_train = 512,  # batch size for training
+    bs_val = 1024,  # batch size for validation
+    num_workers = 30,  # number of parallel data loading workers
+    res = 112,
+    device = 'cuda:0',
+    model = 'resnet50d',
+    num_epochs=10,
+    lr = 0.001,
+    lr_gamma = 0.92,
+    dropout = 0.3,
+    weight_decay = 0.001,
+    pretrained=True,
+    unfreeze_after_n=0,
+    lr_unfrozen = 0.00003,
+    in_paths = dict(
+        train = '/zfs/wficai/Data/echonet_data/TRAIN.csv',
+        val = '/zfs/wficai/Data/echonet_data/VAL.csv',
+        frames = '/zfs/wficai/Data/echonet_data/frames.csv'
+    ),
+    transforms = dict(
+        train = 'train',
+        test = 'test'
+    )
+)
+
+# config file used for model pretraining
 config_video =cfg_video = dict(
     mode_filter =  ['color', 'color_compare'],
     view_filter = ['pdaView', 'pdaRelatedView'],
@@ -37,7 +65,7 @@ config_video =cfg_video = dict(
     bs_test = 10, 
     num_workers = 30,  # number of parallel data loading workers
     device = 'cuda:1',
-    num_epochs=20,
+    num_epochs=30,
     lr = 0.001,
     lr_unfrozen = 0.0001,
     lr_gamma = 0.92,
