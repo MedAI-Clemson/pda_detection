@@ -1,0 +1,18 @@
+I. Intro
+II. Related work
+III. Methods
+- attention method
+    - mixture
+    - product of experts
+    - lstm attention
+- data augmentation
+- interpretability
+- benchmark models
+    - frame averaging
+    - lstm+cnn
+    - 3d-cnn
+IV. Experiments
+- datasets
+- efficiency comparisons
+- interpretability
+V. Summary and outlook

@@ -48,12 +48,18 @@ class ImageTransforms:
 
 
 class VideoTransforms:
-    def __init__(self, res: int, time_downscale_factor:int = 1.0):
-
+    def __init__(self, res: int, 
+                 time_downscale_factor = 1, 
+                 time_downscale_method = 'contiguous'):
+        
+        # training transforms
         self._tfms_train = tfm.Compose([
             tfm.RandomEqualize(p=0.5),
             tfm.RandAugment(),
-            RandomDownsampleTime(time_downscale_factor), 
+            DownsampleTime(
+                time_downscale_factor, 
+                time_downscale_method
+            ),
             tfm.ConvertImageDtype(torch.float32),
             nn.UpsamplingBilinear2d(int(resize_factor*res)),
             tfm.CenterCrop(res),
@@ -64,6 +70,7 @@ class VideoTransforms:
             tfm.RandomInvert()
         ])
 
+        # eval/testing transforms
         self._tfms_test = tfm.Compose([
             tfm.ConvertImageDtype(torch.float32),
             nn.UpsamplingBilinear2d(int(resize_factor*res)),
@@ -71,6 +78,7 @@ class VideoTransforms:
             tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
         ])
         
+        # plotting transforms
         self._tfms_plot = tfm.Compose([
             tfm.ConvertImageDtype(torch.float32),
             nn.UpsamplingBilinear2d(int(resize_factor*res)),
@@ -99,14 +107,21 @@ class CustomCrop(nn.Module):
     def forward(self, img):
         return img[..., self.y_slice, self.x_slice]
     
-class RandomDownsampleTime(nn.Module):
-    def __init__(self, reduction_factor):
+class DownsampleTime(nn.Module):
+    def __init__(self, reduction_factor, method):
         super().__init__()
+        assert method in ['random', 'contiguous'], "Method must be 'random' or 'contiguous'"
+        self.method = method
         self.s = reduction_factor
         
     def forward(self, vid):
         num_points = int(vid.shape[0]/self.s)
-        rand_t = torch.randint(low=0, high=vid.shape[0], size=(num_points,))
+        
+        if self.method=='random':
+            tix = torch.randint(low=0, high=vid.shape[0], size=(num_points,))
+        elif self.method=='contiguous':
+            start_ix = torch.randint(low=0, high=vid.shape[0] - num_points, size=(1,))
+            tix = slice(start_ix, start_ix+num_points)
         
         # vid: [T, C, H, W]
-        return vid[rand_t]
+        return vid[tix]
