@@ -1,0 +1,28 @@
+# local system
+artifact_folder: '/zfs/wficai/pda/model_run_artifacts/echonet_0p05_train/'
+data_paths:
+    videos: '/zfs/wficai/Data/echonet_data/train_fullval_test_0.05.csv'
+    frames: '/zfs/wficai/Data/echonet_data/frames.csv'
+device: 'cuda:1'
+
+# data loading
+bs_train: 20  # batch size for training
+bs_val: 10  # batch size for validation
+num_workers: 20  # number of parallel data loading workers
+res: 112 # resolution of images passed to model
+time_downsample_kwargs:
+    method: 'random'
+    num_frames: 8
+    
+# model and training
+model: 'resnet18d'
+pretrained: True
+checkpoint: '/zfs/wficai/pda/model_run_artifacts/echonet_pre_0p05/model_checkpoint.ckpt'
+etas: [0.0, 0.0]
+num_epochs: 45
+lr: 3.e-4
+warmup_epochs: 0  # fixed uniform attention during warmup
+lr_warmup: 1.e-7  # learning rate during warmup
+lr_gamma: 0.9
+dropout: 0.5
+weight_decay: 1.e-5

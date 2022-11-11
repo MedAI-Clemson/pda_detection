@@ -1,0 +1,37 @@
+# data loading
+subset_column: null
+dataset_kwargs:
+    mode_filter: ['color', 'color_compare']
+    view_filter: ['pdaRelatedView', 'pdaView']
+dataloader_kwargs:
+    batch_size: 20 
+    num_workers: 45  
+    pin_memory: True
+res: 112 # height and width
+time_downsample_kwargs:
+    method: 'random'
+    num_frames: 16 #32
+    
+# model
+encoder_kwargs:
+    model_name: 'resnet50d'
+    checkpoint: null
+    pretrained: True
+    in_chans: 3
+vidnet_kwargs:
+    num_heads: 32
+    num_out: 1
+    pooling_method: 'attn'
+    drop_rate: 0.5
+
+# training
+num_epochs: 200
+optim_kwargs:
+    lr: 3.e-5
+    weight_decay: 1.e-3
+sched_kwargs:
+    factor: 0.1
+    patience: 3
+    verbose: True
+early_stopper_kwargs:
+    patience: 10

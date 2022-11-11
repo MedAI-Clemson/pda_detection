@@ -5,84 +5,37 @@ import torch.nn.functional as F
 
 resize_factor = 1.1
 
-class ImageTransforms:
-    def __init__(self, res: int):
-
-        self._tfms_train = tfm.Compose([
-            tfm.Resize(int(resize_factor*res)),
-            tfm.CenterCrop(res),
-            tfm.RandomEqualize(p=0.5),
-            tfm.RandAugment(),
-            tfm.ToTensor(),
-            tfm.RandomErasing(scale=(0.02, 0.1)),
-            tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
-            tfm.RandomHorizontalFlip(),
-            tfm.RandomRotation((-45, 45)),
-            tfm.RandomInvert()
-        ])
-
-        self._tfms_test = tfm.Compose([
-            tfm.Resize(int(resize_factor*res)),
-            tfm.CenterCrop(res),
-            tfm.ToTensor(),
-            tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
-        ])
-        
-        self._tfms_plot = tfm.Compose([
-            tfm.Resize(int(resize_factor*res)),
-            tfm.CenterCrop(res),
-            tfm.ToTensor()
-        ])
-
-
-    def get_transforms(self, key):
-        implemented_keys = ['train', 'test']
-        if key == 'train':
-            return self._tfms_train
-        elif key == 'test':
-            return self._tfms_test
-        elif key == 'plot': 
-            return self._tfms_plot
-        else:
-            raise NotImplementedError(f"Transform {key} is not implemented. Choose one of {implemented_keys}.")
-
-
 class VideoTransforms:
     def __init__(self, res: int, 
-                 time_downscale_factor = 1, 
-                 time_downscale_method = 'contiguous'):
+                 mean=torch.Tensor([0.4850, 0.4560, 0.4060]), 
+                 std=torch.Tensor([0.2290, 0.2240, 0.2250]),
+                 time_downsample_kwargs = None):
+        
+        if time_downsample_kwargs is None:
+            time_downsample_kwargs = {'method': 'random', 'num_frames': 16}
         
         # training transforms
         self._tfms_train = tfm.Compose([
-            tfm.RandomEqualize(p=0.5),
+            DownsampleTime(**time_downsample_kwargs),
             tfm.RandAugment(),
-            DownsampleTime(
-                time_downscale_factor, 
-                time_downscale_method
-            ),
             tfm.ConvertImageDtype(torch.float32),
-            nn.UpsamplingBilinear2d(int(resize_factor*res)),
-            tfm.CenterCrop(res),
-            tfm.RandomErasing(scale=(0.02, 0.1)),
-            tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
-            tfm.RandomHorizontalFlip(),
-            tfm.RandomRotation((-45, 45)),
-            tfm.RandomInvert()
+            tfm.Resize((res, res)),
+            # tfm.RandomErasing(scale=(0.02, 0.1)),
+            tfm.Normalize(mean=mean, std=std),
+            # tfm.RandomRotation((-10, 10))
         ])
 
         # eval/testing transforms
         self._tfms_test = tfm.Compose([
             tfm.ConvertImageDtype(torch.float32),
-            nn.UpsamplingBilinear2d(int(resize_factor*res)),
-            tfm.CenterCrop(res),
-            tfm.Normalize(mean=torch.Tensor([0.4850, 0.4560, 0.4060]), std=torch.Tensor([0.2290, 0.2240, 0.2250])),
+            tfm.Resize((res, res)),
+            tfm.Normalize(mean=mean, std=std),
         ])
         
         # plotting transforms
         self._tfms_plot = tfm.Compose([
             tfm.ConvertImageDtype(torch.float32),
-            nn.UpsamplingBilinear2d(int(resize_factor*res)),
-            tfm.CenterCrop(res),
+            tfm.Resize((res, res)),
         ])
 
     def get_transforms(self, key):
@@ -108,20 +61,27 @@ class CustomCrop(nn.Module):
         return img[..., self.y_slice, self.x_slice]
     
 class DownsampleTime(nn.Module):
-    def __init__(self, reduction_factor, method):
+    def __init__(self, method, num_frames, stride=1):
         super().__init__()
         assert method in ['random', 'contiguous'], "Method must be 'random' or 'contiguous'"
         self.method = method
-        self.s = reduction_factor
+        self.num_frames = num_frames
+        self.stride = stride
         
-    def forward(self, vid):
-        num_points = int(vid.shape[0]/self.s)
+        if method=='contiguous':
+            print("Warning: the contiguous method is untested.")
+            self.clip_span = num_frames + stride * (num_frames - 1)
         
+    def forward(self, vid):        
         if self.method=='random':
-            tix = torch.randint(low=0, high=vid.shape[0], size=(num_points,))
+            tix = torch.randint(low=0, high=vid.shape[0], size=(self.num_frames,))
         elif self.method=='contiguous':
-            start_ix = torch.randint(low=0, high=vid.shape[0] - num_points, size=(1,))
-            tix = slice(start_ix, start_ix+num_points)
+            assert self.clip_span < vid.shape[0], \
+                f"The requested num_frames {self.num_frames} and stride {self.stride}" + \
+                f"imply a clip span {self.clip_span} that is larger than" + \
+                f"the length of the input video {vid.shape[0]}"
+            start_ix = torch.randint(low=0, high=vid.shape[0] - self.clip_span, size=(1,))
+            tix = slice(start_ix, start_ix+self.clip_span, self.stride)
         
-        # vid: [T, C, H, W]
+        # vid: [L, C, H, W]
         return vid[tix]
