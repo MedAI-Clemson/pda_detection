@@ -197,7 +197,7 @@ if __name__=='__main__':
     parser.add_argument('--num-heads', type=int, required=False, default=None,
                         help='Number of attention heads for MedVidNet model. Overrides "vidnet_kwargs: num_heads" in config if provided.')
     parser.add_argument('--pooling-method', type=str, required=False, default=None,
-                        choices=['attn', 'max', 'avg'],
+                        choices=['attn', 'tanh_attn', 'max', 'avg'],
                         help='Frame pooling method. Overrides "vidnet_kwargs: pooling_method" in config if provided.')
     parser.add_argument('--device', type=str, required=False, default=None,
                         help='Compute devie. Overrides "device" in config if provided')

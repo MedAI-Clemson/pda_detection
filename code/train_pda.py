@@ -92,7 +92,11 @@ def main(cfg):
     
     # classifier network
     print("Creating video classifier network.")
-    encoder = timm.create_model(**cfg['encoder_kwargs'], num_classes=0)
+    if cfg['encoder_kwargs']['checkpoint_path'] is not None:
+        encoder = timm.create_model(**cfg['encoder_kwargs'], num_classes=cfg['num_pretrain_classes'])
+        encoder.fc = nn.Identity()
+    else:
+        encoder = timm.create_model(**cfg['encoder_kwargs'], num_classes=0)
     m = models.MedVidNet(encoder, **cfg['vidnet_kwargs']).to(device)
     
     num_pars = num_parameters(m)
@@ -181,7 +185,7 @@ if __name__=='__main__':
     parser.add_argument('--num-heads', type=int, required=False, default=None,
                         help='Number of attention heads for MedVidNet model. Overrides "vidnet_kwargs: num_heads" in config if provided.')
     parser.add_argument('--pooling-method', type=str, required=False, default=None,
-                        choices=['attn', 'max', 'avg'],
+                        choices=['attn', 'tanh_attn', 'max', 'avg'],
                         help='Frame pooling method. Overrides "vidnet_kwargs: pooling_method" in config if provided.')
     parser.add_argument('--device', type=str, required=False, default=None,
                         help='Compute devie. Overrides "device" in config if provided')
@@ -204,8 +208,6 @@ if __name__=='__main__':
         cfg['vidnet_kwargs']['pooling_method'] = args.pooling_method
     if args.device is not None:
         cfg['device'] = args.device
-
-    cfg['artifact_folder'] = path...
     
     print("Running training script with configuration:")
     print('-'*30)
