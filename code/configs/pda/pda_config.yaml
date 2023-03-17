@@ -4,8 +4,8 @@ dataset_kwargs:
     mode_filter: ['color', 'color_compare']
     view_filter: ['pdaRelatedView', 'pdaView']
 dataloader_kwargs:
-    batch_size: 20 
-    num_workers: 45  
+    batch_size: 15 
+    num_workers: 20  
     pin_memory: True
 res: 112 # height and width
 time_downsample_kwargs:

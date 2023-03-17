@@ -1,7 +1,10 @@
 import torch
 from torch.utils.data import Dataset, default_collate
+from torch.utils.data import DataLoader
 from torchvision.io import read_image
 import pandas as pd
+import random
+import copy
 
 class PdaVideos(Dataset):
     """PDA Video dataset used to train video-based model"""
@@ -16,10 +19,18 @@ class PdaVideos(Dataset):
     inv_view_map = {v: k for k, v in view_map.items()}
     inv_mode_map = {v: k for k, v in mode_map.items()}
 
-    def __init__(self, data: pd.DataFrame, transforms, split, view_filter=None, mode_filter=None, subset_column=None):
+    def __init__(self, 
+                 data: pd.DataFrame, 
+                 transforms = None, 
+                 split = None,
+                 view_filter=None, mode_filter=None, 
+                 subset_column=None):
+        
+        self.data = data
         
         # subset to split
-        self.data = data.query('Split==@split').copy() 
+        if split is not None:
+            self.data = data.query('Split==@split').copy() 
         
         # optionally subset by subset column
         if subset_column is not None:
@@ -31,17 +42,22 @@ class PdaVideos(Dataset):
         self.data.loc[:,'trg_mode'] = self.data['mode'].map(self.mode_map)
 
         # set transforms
-        self.tfms = transforms
+        if transforms is not None:
+            self.tfms = transforms
 
         # apply filters
         if view_filter is not None:
             self.data = self.data.loc[self.data['view'].isin(view_filter)]
         if mode_filter is not None:
             self.data = self.data.loc[self.data['mode'].isin(mode_filter)]
+            
+        self.data = self.data.reset_index()
 
         # group to get video-level o data
-        self.video_data = self.data[['study', 'patient_id', 'patient_type', 'external_id', 
-                                     'trg_type', 'trg_view', 'trg_mode']].drop_duplicates()
+        self.video_data = self.data[[
+            'study', 'patient_id', 'patient_type', 'external_id', 
+            'cv_split', 'trg_type', 'trg_view', 'trg_mode'
+            ]].drop_duplicates().reset_index()
 
     def __getitem__(self, index) -> dict:
         row = self.video_data.iloc[index]
@@ -72,6 +88,46 @@ class PdaVideos(Dataset):
 
     def __len__(self):
         return len(self.video_data)
+    
+    def cv_dl_gen(self, dataloader_kwargs, tfms):
+        for split_ix in range(6):
+            # randomly choose a vlidation index
+            val_ix = random.choice([j for j in range(6) if j != split_ix])
+            
+            # identify which rows are in which split
+            test_cond = (self.video_data.cv_split==split_ix)
+            val_cond = (self.video_data.cv_split==val_ix)
+            train_cond = ~test_cond & ~val_cond
+            
+            # get the indices of the samples in each split
+            train_ix = self.video_data[train_cond].index
+            val_ix = self.video_data[val_cond].index
+            test_ix = self.video_data[test_cond].index
+            
+            # get the datasets for each
+            d_train = torch.utils.data.Subset(self, train_ix)
+            d_val = torch.utils.data.Subset(self, val_ix)
+            d_test = torch.utils.data.Subset(self, test_ix)
+            
+            # set the transforms appropriately
+            # first need to make a shallow copy of the training dataset
+            # otherwise setting val/test transforms will change training data
+            # shallow copy avoids copy the large dataframes (i think)
+            d_train.dataset = copy.copy(self)
+            
+            # get the split-specific transforms and set them
+            tfms_train = tfms.get_transforms('train')
+            tfms_test = tfms.get_transforms('test')  # same tfms for val/test
+            d_train.dataset.tfms = tfms_train
+            d_val.dataset.tfms = tfms_test
+            d_test.dataset.tfms = tfms_test
+            
+            # make the dataloaders
+            dl_train = DataLoader(d_train, shuffle=True, collate_fn=collate_video, **dataloader_kwargs)
+            dl_val = DataLoader(d_val, collate_fn=collate_video, **dataloader_kwargs)
+            dl_test = DataLoader(d_test, collate_fn=collate_video, **dataloader_kwargs)
+            
+            yield split_ix, (dl_train, dl_val, dl_test)
     
 class EchoNetVideos(Dataset):
     def __init__(self, video_data: pd.DataFrame, frame_data: pd.DataFrame,
