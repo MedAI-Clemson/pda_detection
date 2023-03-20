@@ -8,6 +8,7 @@ import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn import metrics as skmet
 import os
+import json
 import yaml
 import copy
 
@@ -52,28 +53,33 @@ def evaluate(model, test_dataloader, device):
 
     target_ls = []
     output_ls = []
+    external_id_ls = []
+    patient_id_ls = []
     losses = []
     for ix, batch in enumerate(test_dataloader):
         inputs = batch['video'].to(device)
         num_frames = batch['num_frames']
         targets = batch['trg_type'].to(device).type(torch.float32)
-        target_ls.append(targets.cpu().numpy())
+        target_ls.append(targets.cpu().numpy().squeeze().astype(float))
+        external_id_ls.append(batch['external_id'])
+        patient_id_ls.append(batch['patient'])
         
         with torch.no_grad():
             outputs, _ = model(inputs, num_frames)
-            output_ls.append(outputs.cpu().numpy())
+            output_ls.append(outputs.cpu().numpy().squeeze().astype(float))
             loss = nn.functional.binary_cross_entropy_with_logits(outputs.squeeze(), targets.squeeze())
             
         losses.append(loss.detach().item())
         
     metrics = compute_metrics(np.concatenate(target_ls), np.concatenate(output_ls))
-    return np.mean(losses), metrics
+    return np.mean(losses), metrics, np.concatenate(target_ls), np.concatenate(output_ls), np.concatenate(external_id_ls), np.concatenate(patient_id_ls)
 
-def compute_metrics(y_true, y_pred):
+def compute_metrics(y_true, y_pred, from_probs=False, threshold=0.5):
     mets = dict()
     
-    y_pred = 1/(1+np.exp(-y_pred))
-    y_pred_cls = (y_pred>0.5).astype(int)
+    if not from_probs:
+        y_pred = 1/(1+np.exp(-y_pred))
+    y_pred_cls = (y_pred>threshold).astype(int)
     
     mets['roc_auc'] = skmet.roc_auc_score(y_true, y_pred)
     mets['accuracy'] = skmet.accuracy_score(y_true, y_pred_cls)
@@ -110,7 +116,14 @@ def main(cfg):
     dat = PdaVideos(df_frames, subset_column=cfg['subset_column'], **cfg['dataset_kwargs'])
     print("Train data size:", len(dat))
     
+    cv_results_test = []
+    cv_results_val = []
+    
     for split_ix, (dl_train, dl_val, dl_test) in dat.cv_dl_gen(cfg['dataloader_kwargs'], tfms):
+        
+        # if split_ix == 1:
+        #     break
+        
         print(f"Beginning CV split {split_ix+1} of 6:")
         
         # initialize model
@@ -133,7 +146,7 @@ def main(cfg):
             print(f"[{epoch} TRAIN] Cross entropy loss = {train_loss:0.5f}")       
 
             # evaluate
-            val_loss, metrics = evaluate(m, dl_val, device)
+            val_loss, metrics, _, _, _, _ = evaluate(m, dl_val, device)
             val_loss_ls.append(val_loss)
             print(f"[{epoch} VALID] Cross entropy loss = {val_loss:0.5f}")
             print(f"[{epoch} VALID] PDA classification: ", *[f"{k}={v:0.5f}" for k, v in metrics.items()])
@@ -141,7 +154,7 @@ def main(cfg):
             if val_loss < best_val_loss:
                 print(f"Validation loss improved ({best_val_loss:0.5f} --> {val_loss:0.5f}). Saving model checkpoint.")
                 torch.save(m.state_dict(), f"{cfg['artifact_folder']}/model_checkpoint_video.ckpt")
-                best_val_loss =  val_loss 
+                best_val_loss =  val_loss
 
             if stopper.stop(val_loss):
                 print(f"Stopping early because validation loss did not improve after {stopper.patience} epochs.")
@@ -152,14 +165,28 @@ def main(cfg):
         print("Post-training evaluation:")
         m.load_state_dict(torch.load(cfg['artifact_folder'] + 'model_checkpoint_video.ckpt'))
         print("Validation:")
-        val_loss, metrics = evaluate(m, dl_val, device)
+        val_loss, metrics, targets, outputs, external_ids, patient_ids = evaluate(m, dl_val, device)
+        cv_results_val.append({'split': split_ix, 'loss': val_loss, 'metrics': metrics, 
+                               'targets': list(targets), 'outputs': list(outputs), 
+                               'external_ids': list(external_ids), 'patient_ids': list(patient_ids)})
         print(f"\tCross entropy loss = {val_loss:0.5f}")
         print("\tPDA classification: ", *[f"{k}={v:0.5f}" for k, v in metrics.items()])
         
         print("Test:")
-        test_loss, metrics = evaluate(m, dl_test, device)
+        test_loss, metrics, targets, outputs, external_ids, patient_ids = evaluate(m, dl_test, device)
+        cv_results_test.append({'split': split_ix, 'loss': test_loss, 'metrics': metrics, 
+                                'targets': list(targets), 'outputs': list(outputs), 
+                                'external_ids': list(external_ids), 'patient_ids': list(patient_ids)})
         print(f"\tCross entropy loss = {test_loss:0.5f}")
         print("\tPDA classification: ", *[f"{k}={v:0.5f}" for k, v in metrics.items()])
+        
+    # save the cross validation results
+    with open(f"{cfg['artifact_folder']}/cv_results_val.json", 'w') as f:
+        json.dump(cv_results_val, f)
+        
+    with open(f"{cfg['artifact_folder']}/cv_results_test.json", 'w') as f:
+        json.dump(cv_results_test, f)
+        
         
 if __name__=='__main__':
     import argparse

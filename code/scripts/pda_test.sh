@@ -24,7 +24,7 @@ python train_pda_cv.py \
     --device 'cuda:0' \
     --pooling-method 'attn' \
     --num-heads 16 \
-    --epochs 1 \
+    --epochs 50 \
     2>&1 | tee ${artifactfolder}log.txt
 
 end=`date +%s`
