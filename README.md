@@ -1,3 +1,29 @@
+This is the official Pytorch implementation of the paper [On the Relevance of Temporal Features for Medical Ultrasound Video
+  Recognition](https://link.springer.com/chapter/10.1007/978-3-031-43895-0_70) by D. Hudson Smith, John Paul Lineberger, and George H. Baker.
+
+# Abstract
+Many medical ultrasound video recognition tasks involve identifying key anatomical features regardless of when they appear in the video suggesting that modeling such tasks may not benefit from temporal features. Correspondingly, model architectures that exclude temporal features may have better sample efficiency. We propose a novel multi-head attention architecture that incorporates these hypotheses as inductive priors to achieve better sample efficiency on common ultrasound tasks. We compare the performance of our architecture to an efficient 3D CNN video recognition model in two settings: one where we expect not to require temporal features and one where we do. In the former setting, our model outperforms the 3D CNN - especially when we artificially limit the training data. In the latter, the outcome reverses. These results suggest that expressive time-independent models may be more effective than state-of-the-art video recognition models for some common ultrasound tasks in the low-data regime.
+
+# Citation
+If you use this work, please cite
+```
+@inproceedings{smith2023relevance,
+  title={On the Relevance of Temporal Features for Medical Ultrasound Video Recognition},
+  author={Smith, D Hudson and Lineberger, John Paul and Baker, George H},
+  booktitle={International Conference on Medical Image Computing and Computer-Assisted Intervention},
+  pages={744--753},
+  year={2023},
+  organization={Springer}
+}
+```
+
+# Paper version
+The published paper is based on the following commit: https://github.com/MedAI-Clemson/pda_detection/tree/1962cfcfe44dbe18f9ad7383e5a898b7859c95a0 
+
+# Data
+
+# Project structure
+ 
 # Environment setup
 First create a new conda environment
 ```bash
@@ -22,22 +48,4 @@ python -m ipykernel install --user --name pda --display-name "PDA"
 
 You should now be able to select the pda environment within jupyter.
 
-# Code folder:
-
-### Notebooks: 
-* 0_preprocess_frames: used to generate image frames and supporting metadata. Only used when new label data becomes available. 
-* 1_make_patient_study_table: used to generate additional patient metadata used to make train/test splits. To be run after 0_preprocess_frames if new label data becomes available.
-* 2a_examine_images: test image data loading and preprocessing by looking at batches of image data
-* 2b_examine_videos: test video data loading and preprocessing by looking at batches of video data
-* 3a_model_frames: train image classifier to distinguish pda from non-pda frames
-* 3a_model_frames-multitask: train image classifier to distinguish pda from non-pda frames as well as distinguish among views and modes
-* 3b_model_videos: train video classifier to distinguish pda from non-pda clips
-* 4a_evaluate: evaluate models trained using notebook 3a_model_frames
-* 4a_evaluate-multitask: evaluate models trained using notebook 3a_model_frames-multitask. Note: incomplete
-* 4b_evaluate_vid: evaluate models trained using notebook 3b_model_videos
-* create_anonymous_patient_ids: used to make anonymous patient ids to avoid sharing personally identifiable information
-
-### Python scripts:
-* dataset.py: pytorch dataset classes used to load image and video data
-* models.py: pytorch model classes for image or video classification
-* transforms.py: pre-defined sets of pytorch transform for data preprocessing and augmentation
+# Usage
