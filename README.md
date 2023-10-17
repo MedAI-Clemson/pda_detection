@@ -1,5 +1,5 @@
 This is the official Pytorch implementation of the paper [On the Relevance of Temporal Features for Medical Ultrasound Video
-  Recognition](https://link.springer.com/chapter/10.1007/978-3-031-43895-0_70) by D. Hudson Smith, John Paul Lineberger, and George H. Baker.
+  Recognition](https://arxiv.org/abs/2310.10453) by D. Hudson Smith, John Paul Lineberger, and George H. Baker.
 
 # Abstract
 Many medical ultrasound video recognition tasks involve identifying key anatomical features regardless of when they appear in the video suggesting that modeling such tasks may not benefit from temporal features. Correspondingly, model architectures that exclude temporal features may have better sample efficiency. We propose a novel multi-head attention architecture that incorporates these hypotheses as inductive priors to achieve better sample efficiency on common ultrasound tasks. We compare the performance of our architecture to an efficient 3D CNN video recognition model in two settings: one where we expect not to require temporal features and one where we do. In the former setting, our model outperforms the 3D CNN - especially when we artificially limit the training data. In the latter, the outcome reverses. These results suggest that expressive time-independent models may be more effective than state-of-the-art video recognition models for some common ultrasound tasks in the low-data regime.
@@ -7,6 +7,10 @@ Many medical ultrasound video recognition tasks involve identifying key anatomic
 Ultrasound video recognition network architecture: 
 
 ![Architecture diagram](arch.png)
+
+[Audio summary via Science Cast](https://sciencecast.org/casts/qm1b5xtar48l)
+
+[Official MICCAI proceedings](https://link.springer.com/chapter/10.1007/978-3-031-43895-0_70)
 
 # Citation
 If you use this work, please cite
