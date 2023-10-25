@@ -6,4 +6,5 @@ data/
 .vscode/settings.json
 *.png
 *.pt
-*.csv
+*log.csv
+code/echonet_task/pda_final_results/pda_train_val_test.csv
