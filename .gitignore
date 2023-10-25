@@ -5,3 +5,5 @@ data/
 *ipynb_checkpoints*
 .vscode/settings.json
 *.png
+*.pt
+*.csv
