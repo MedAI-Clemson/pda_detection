@@ -9,3 +9,6 @@ data/
 *ipynb_checkpoints*
 .vscode/settings.json
 *.png
+*.pt
+*log.csv
+code/echonet_task/pda_final_results/pda_train_val_test.csv
