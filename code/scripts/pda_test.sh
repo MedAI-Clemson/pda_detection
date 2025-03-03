@@ -9,22 +9,22 @@ echo "-------------------------------"
 start=`date +%s`
 
 # setup env
-module load anaconda3/2022.05-gcc/9.5.0
-module load cuda/11.6.2-gcc/9.5.0
+module load anaconda3/2022.10
+module load cuda/11.7.0
 source activate pda
 cd /home/dane2/Code/pda_detection/code
 
 # loop over number of heads
-artifactfolder="/project/rcde/datasets/pda/model_run_artifacts/pda_cvtest_"${num_heads}"/"
+artifactfolder="/project/dane2/wficai/pda/model_run_artifacts/pda_cvtest/"
 mkdir -p $artifactfolder
 python train_pda_cv.py \
     configs/pda/pda_config.yaml \
     --artifact-folder ${artifactfolder} \
-    --frame-csv "/project/rcde/datasets/pda/model_data/pda_train_val_test.csv" \
+    --frame-csv "/project/dane2/wficai/pda/model_data/pda_train_val_test_remapped.csv" \
     --device 'cuda:0' \
     --pooling-method 'attn' \
     --num-heads 16 \
-    --epochs 50 \
+    --epochs 1 \
     2>&1 | tee ${artifactfolder}log.txt
 
 end=`date +%s`

@@ -5,6 +5,8 @@ from torchvision.io import read_image
 import pandas as pd
 import random
 import copy
+from sklearn.model_selection import StratifiedGroupKFold
+import numpy as np
 
 class PdaVideos(Dataset):
     """PDA Video dataset used to train video-based model"""
@@ -90,9 +92,10 @@ class PdaVideos(Dataset):
         return len(self.video_data)
     
     def cv_dl_gen(self, dataloader_kwargs, tfms):
-        for split_ix in range(6):
+        num_cv_splits = 10 # TODO: don't hardcode the number of splits!
+        for split_ix in range(num_cv_splits):  
             # randomly choose a vlidation index
-            val_ix = random.choice([j for j in range(6) if j != split_ix])
+            val_ix = random.choice([j for j in range(num_cv_splits) if j != split_ix])
             
             # identify which rows are in which split
             test_cond = (self.video_data.cv_split==split_ix)
@@ -128,6 +131,43 @@ class PdaVideos(Dataset):
             dl_test = DataLoader(d_test, collate_fn=collate_video, **dataloader_kwargs)
             
             yield split_ix, (dl_train, dl_val, dl_test)
+
+    def crossval_generator(self, k, dataloader_kwargs, tfms):
+        """
+        Yields dataloaders for train/validation splits.
+        Each split contains a non-overlapping set of patients.
+        Splits are stratified on video quality.
+        """
+
+        cv = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=42)
+
+        for split_ix, (train_ix, val_ix) in enumerate(
+            cv.split(self, self.video_data.patient_type, self.video_data.patient_id)
+        ):
+            print(split_ix, train_ix.shape, val_ix.shape)
+
+            # get the datasets for each
+            d_train = torch.utils.data.Subset(self, train_ix)
+            d_val = torch.utils.data.Subset(self, val_ix)
+            
+            # set the transforms appropriately
+            # first need to make a shallow copy of the training dataset
+            # otherwise setting val/test transforms will change training data
+            # shallow copy avoids copy the large dataframes (i think)
+            d_train.dataset = copy.copy(self)
+            
+            # get the split-specific transforms and set them
+            tfms_train = tfms.get_transforms('train')
+            tfms_test = tfms.get_transforms('test')  # same tfms for val/test
+            d_train.dataset.tfms = tfms_train
+            d_val.dataset.tfms = tfms_test
+            
+            # make the dataloaders
+            dl_train = DataLoader(d_train, shuffle=True, collate_fn=collate_video, **dataloader_kwargs)
+            dl_val = DataLoader(d_val, collate_fn=collate_video, **dataloader_kwargs)
+
+            yield split_ix, (dl_train, dl_val)
+
     
 class EchoNetVideos(Dataset):
     def __init__(self, video_data: pd.DataFrame, frame_data: pd.DataFrame,
@@ -183,3 +223,5 @@ def collate_video(batch_list):
     record.update(default_collate(batch_list))
 
     return record
+
+

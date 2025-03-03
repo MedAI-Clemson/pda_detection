@@ -1,3 +1,7 @@
+code/misc/boston_external_validation/data_resources*
+wget-log
+*.mp4
+*.log
 models/
 data/
 .idea/

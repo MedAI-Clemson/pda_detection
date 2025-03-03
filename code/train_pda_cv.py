@@ -60,13 +60,13 @@ def evaluate(model, test_dataloader, device):
         inputs = batch['video'].to(device)
         num_frames = batch['num_frames']
         targets = batch['trg_type'].to(device).type(torch.float32)
-        target_ls.append(targets.cpu().numpy().squeeze().astype(float))
+        target_ls.append(targets.cpu().numpy().astype(float))
         external_id_ls.append(batch['external_id'])
         patient_id_ls.append(batch['patient'])
         
         with torch.no_grad():
             outputs, _ = model(inputs, num_frames)
-            output_ls.append(outputs.cpu().numpy().squeeze().astype(float))
+            output_ls.append(outputs.cpu().numpy().astype(float))
             loss = nn.functional.binary_cross_entropy_with_logits(outputs.squeeze(), targets.squeeze())
             
         losses.append(loss.detach().item())
@@ -119,12 +119,14 @@ def main(cfg):
     cv_results_test = []
     cv_results_val = []
     
-    for split_ix, (dl_train, dl_val, dl_test) in dat.cv_dl_gen(cfg['dataloader_kwargs'], tfms):
+    k = 12 # TODO: don't hardcode the number of cross-val splits!
+    for split_ix, (dl_train, dl_val) in dat.crossval_generator(k, cfg['dataloader_kwargs'], tfms):
         
         # if split_ix == 1:
         #     break
         
-        print(f"Beginning CV split {split_ix+1} of 6:")
+        print(f"Beginning CV split {split_ix+1} of {k}:") # TODO: don't hardcode the 10!
+        checkpoint_path = f"{cfg['artifact_folder']}/model_checkpoint_video_{split_ix}.ckpt"
         
         # initialize model
         m = models.MedVidNet(copy.deepcopy(encoder), **cfg['vidnet_kwargs']).to(device)
@@ -136,7 +138,7 @@ def main(cfg):
 
         train_loss_ls = []
         val_loss_ls = []
-        metrics_ls = []
+        
         best_val_loss = 1e10
         for epoch in range(cfg['num_epochs']):
 
@@ -153,7 +155,7 @@ def main(cfg):
 
             if val_loss < best_val_loss:
                 print(f"Validation loss improved ({best_val_loss:0.5f} --> {val_loss:0.5f}). Saving model checkpoint.")
-                torch.save(m.state_dict(), f"{cfg['artifact_folder']}/model_checkpoint_video.ckpt")
+                torch.save(m.state_dict(), checkpoint_path)
                 best_val_loss =  val_loss
 
             if stopper.stop(val_loss):
@@ -163,7 +165,7 @@ def main(cfg):
             scheduler.step(val_loss)
         
         print("Post-training evaluation:")
-        m.load_state_dict(torch.load(cfg['artifact_folder'] + 'model_checkpoint_video.ckpt'))
+        m.load_state_dict(torch.load(checkpoint_path))
         print("Validation:")
         val_loss, metrics, targets, outputs, external_ids, patient_ids = evaluate(m, dl_val, device)
         cv_results_val.append({'split': split_ix, 'loss': val_loss, 'metrics': metrics, 
@@ -172,13 +174,13 @@ def main(cfg):
         print(f"\tCross entropy loss = {val_loss:0.5f}")
         print("\tPDA classification: ", *[f"{k}={v:0.5f}" for k, v in metrics.items()])
         
-        print("Test:")
-        test_loss, metrics, targets, outputs, external_ids, patient_ids = evaluate(m, dl_test, device)
-        cv_results_test.append({'split': split_ix, 'loss': test_loss, 'metrics': metrics, 
-                                'targets': list(targets), 'outputs': list(outputs), 
-                                'external_ids': list(external_ids), 'patient_ids': list(patient_ids)})
-        print(f"\tCross entropy loss = {test_loss:0.5f}")
-        print("\tPDA classification: ", *[f"{k}={v:0.5f}" for k, v in metrics.items()])
+        # print("Test:")
+        # test_loss, metrics, targets, outputs, external_ids, patient_ids = evaluate(m, dl_test, device)
+        # cv_results_test.append({'split': split_ix, 'loss': test_loss, 'metrics': metrics, 
+        #                         'targets': list(targets), 'outputs': list(outputs), 
+        #                         'external_ids': list(external_ids), 'patient_ids': list(patient_ids)})
+        # print(f"\tCross entropy loss = {test_loss:0.5f}")
+        # print("\tPDA classification: ", *[f"{k}={v:0.5f}" for k, v in metrics.items()])
         
     # save the cross validation results
     with open(f"{cfg['artifact_folder']}/cv_results_val.json", 'w') as f:
